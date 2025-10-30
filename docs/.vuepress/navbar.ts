@@ -12,4 +12,5 @@ export default defineNavbarConfig([
   { text: '常见问题', link: '/intro/QA.md' },
   { text: '源制作指南', link: '/intro/create_source.md' },
   { text: '键盘快捷键', link: '/intro/keyboard.md' },
+  { text: '源链接加解密', link: '/intro/url.md' },
 ])

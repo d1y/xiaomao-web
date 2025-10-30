@@ -1,311 +1,487 @@
-# 视频源制作
+# 源制作指南
 
-在小猫中一共有两种源:
+> [!NOTE]
+> 该文档仅适用于 `>=2.6.0` 版本
 
-- **VOD**: 也就是maccms源
-- **JS**: JS扩展源
+小猫影视支持两种视频源类型，让你可以轻松接入各种影视资源：
 
-源配置参考:
+- **maccms**: 苹果 CMS 源（兼容 XML/JSON 格式）
+- **JS**: JavaScript 扩展源（自定义实现）
 
-```ts
-interface Iconfig {
-  id: string // $UUID 不可重复
-  name: string // 名称
-  type: 0 | 1 // 0=vod | 1=js
-  api: string // vod是接口地址 | js是baseUrl
-  nsfw: boolean // 是否是绅士源
-  logo?: string // 图标/ignore
-  desc?: string // 描述/ignore
-  extra?: {
-    template?: "t4"
-    gfw?: boolean // 是否需要科学上网
-    searchLimit?: number // 搜索分页数量
-  }
-}
-```
+## 配置格式
 
-## VOD
-
-VOD源的制作思路:
-1. 搜索 `maccms 采集` 然后找到 `xml|json`(都支持) 采集接口
-2. 自己测试一下是否可用
-3. 自己编写配置
-
-示例:
-```json
-{
-  "id": "honniuziyuan",
-  "name": "红牛资源",
-  "api": "https://www.hongniuzy2.com/api.php/provide/vod/at/xml",
-  "type": 0
-}
-```
-
-## JS
-
-JS源的制作思路就是:
-1. 搜索 `[电影名称] 在线播放`
-2. 试看一下, 看是否能播放, 能播放就开始编写源
-
-现在开始编写源, JS 源的本质上就是
+下面是一个完整的源配置示例:
 
 ```jsonc
-{
-  "extra": {
-    "js": {
-      "category": "$jscode", // 获取分类
-      "home": "$jscode", // 首页请求
-      "detail": "$jscode", // 详情
-      "search": "$jscode", // 搜索
-      "parseIframe": "$jscode", // 解析 iframe 获取 m3u8 直链
+// 简单数组
+[
+  {/* Iconfig */
+    "id": "$UUID", // 唯一标识(不能重复)
+    "name": "d1y@的影视站", // 名称
+    "type": 0, // 源类型(0: maccms, 1: JS/universal)
+    "logo": "", // 图标 URL
+    "desc": "", // 源介绍
+    "nsfw": false, // 是否为 NSFW 内容
+    "status": true, // 源状态(true: 启用, false: 禁用)
+    "api": "", // API 地址
+    "extra": { // 额外配置
+      // ========== 通用配置 ==========
+      "jiexiUrl": "", // 视频解析接口 URL (可选，功能待完善)
+      "gfw": false, // 是否需要代理访问 (可选)
+      "searchLimit": 20, // 搜索结果每页数量 (可选，maccms默认20，JS默认10)
+      // ========== maccms 源配置特有分类 (type=0) ==========
+      "category": "", // 分类 ID 或名称 (可选，用于筛选特定分类)
+      // ========== JS 源配置 (type=1) ==========
+      "js": {
+        "category": "$JS函数名 | 真实的分类数组", // 分类函数或数组
+        "home": "$JS函数名", // 首页函数
+        "search": "$JS函数名", // 搜索函数
+        "detail": "$JS函数名", // 详情函数
+        "parseIframe": "$JS函数名" // 解析iframe函数(可选)
+      },
+      // ========== 模板配置 (可选) ==========
+      "template": "template_id", // 使用预定义的模板 ID(目前只有t4)
+      // ========== 视频嗅探配置 (可选) ==========
+      // 当 parseIframe 未实现时自动启用
+      "sniffer": {
+        "mode": 0, // 嗅探模式: 0=返回第一个URL, 1=返回所有URL
+        "timeout": 10000, // 超时时间(毫秒)
+        "customRegex": "", // 自定义正则表达式(可选)
+        "exclude": "", // 排除规则(可选)
+        "script": "", // 页面加载后执行的JS脚本(可选)
+        "initScript": "" // 页面初始化时执行的JS脚本(可选)
+      }
     }
+  }
+]
+
+// 复杂对象
+{
+  "sites": [], /* Array<Iconfig> */
+  "data": [],  /* Array<Iconfig> */
+  "lives": [], /* Array<ILiveItem> */
+}
+```
+
+### 配置参数速查表
+
+#### 基础字段（所有源通用）
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `id` | string | ✅ | - | 唯一标识，不能重复 |
+| `name` | string | ✅ | - | 源名称 |
+| `type` | int | ✅ | 0 | 源类型：0=maccms, 1=JS |
+| `api` | string | ✅ | - | API 地址 |
+| `logo` | string | ❌ | "" | 图标 URL |
+| `desc` | string | ❌ | "" | 源介绍 |
+| `nsfw` | bool | ❌ | false | 是否为 NSFW 内容 |
+| `status` | bool | ❌ | true | 是否启用 |
+
+#### extra 字段（可选配置）
+
+| 参数 | 类型 | 适用源 | 默认值 | 说明 |
+|------|------|--------|--------|------|
+| `jiexiUrl` | string | 全部 | "" | 视频解析接口 URL |
+| `gfw` | bool | 全部 | false | 是否需要代理访问 |
+| `searchLimit` | int | 全部 | 20/10 | 搜索结果每页数量 |
+| `category` | string | maccms | - | 筛选特定分类 |
+| `template` | string | JS | - | 使用预定义模板 |
+| `js` | object | JS | - | JS 函数配置 |
+| `sniffer` | object | 全部 | - | 视频嗅探配置 |
+
+#### TV 直播源配置包含以下字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | ✅ | 频道名称（如：CCTV1、湖南卫视） |
+| `url` | string | ✅ | 直播流地址（支持 m3u、txt 等格式） |
+| `type` | int | ✅ | 类型标识：0=m3u 格式，1=txt 格式 |
+
+
+### 如何使用配置文件
+
+将配置文件上传到可访问的静态资源网站（如 GitHub Pages、Vercel 等），然后在小猫影视中打开「视频源管理」，添加配置文件的 URL 地址即可。
+
+<img src="https://s2.loli.net/2025/10/24/gvdox1l3uQKipIB.png" width="320" />
+
+**使用订阅协议**
+
+小猫影视支持订阅协议 `xm://sub?url=<配置文件URL>`，用户点击链接即可自动添加源。例如：
+
+```bash
+xm://sub?url=https://example.com/source.json
+```
+
+### URL 加密规则（可选）
+
+为了保护源地址或简化配置，小猫影视支持对 URL 进行 Base64 加密。
+
+#### 加密格式
+
+所有加密的 URL 必须以 `b` 开头，后跟 Base64 编码的内容：
+
+```
+b<base64_encoded_content>
+```
+
+#### 支持的加密类型
+
+**1. 普通 URL 加密**
+
+直接对完整的 URL 进行 Base64 编码：
+
+```javascript
+// 原始 URL
+https://example.com/api/data.json
+
+// 加密后（b + base64）
+baHR0cHM6Ly9leGFtcGxlLmNvbS9hcGkvZGF0YS5qc29u
+```
+
+**2. GitHub 规则加密**
+
+对于托管在 GitHub 的配置文件，可以使用简化的 GitHub 规则：
+
+**格式：** `g<user>/<repo>#<branch>/<path>`
+
+- `g`: GitHub 规则标识符
+- `<user>`: GitHub 用户名
+- `<repo>`: 仓库名
+- `#<branch>`: 分支名（可选，默认为 `main`）
+- `<path>`: 文件路径（支持多级目录）
+
+**示例：**
+
+```javascript
+// GitHub 规则（指定分支）
+gd1y/kitty#gh-pages/output/result.json
+
+// 转换为
+https://raw.githubusercontent.com/d1y/kitty/gh-pages/output/result.json
+
+// 加密后
+bZ2QxeS9raXR0eSNnaC1wYWdlcy9vdXRwdXQvcmVzdWx0Lmpzb24=
+```
+
+```javascript
+// GitHub 规则（默认分支）
+gd1y/kitty/data/source.json
+
+// 转换为
+https://raw.githubusercontent.com/d1y/kitty/main/data/source.json
+
+// 加密后
+bZ2QxeS9raXR0eS9kYXRhL3NvdXJjZS5qc29u
+```
+
+## 苹果源（maccms）
+
+小猫影视完整支持苹果 CMS 的资源接口，兼容 XML 和 JSON 两种格式。
+
+### 如何找到苹果源
+
+1. 搜索「资源采集站」关键词，可以找到很多资源站列表
+   - 参考：https://14ysdg.com/archives/82
+
+2. 找到类似这样的 API 地址：`http://help.apibdzy.com`
+
+   <img src="https://i.loli.net/2021/11/15/AwfBn2yzMRXdTm6.png" width="240" />
+
+3. 访问 API 地址，检查返回的数据格式
+   - 确认返回的是 `xml` 或 `json` 格式
+   - 能看到影视数据结构就说明可用
+
+   <img src="https://i.loli.net/2021/11/15/j6UEP7AnIwJMV5Y.png" width="240" />
+
+### 创建苹果源配置
+
+找到可用的 API 后，按照下面的格式创建配置文件：
+
+#### 基础配置
+
+```json
+[
+  {
+    "id": "$UUID",
+    "name": "百度资源",
+    "type": 0,
+    "logo": "",
+    "nsfw": false,
+    "api": "https://cj.apibdzy.com/inc/api.php"
+  }
+]
+```
+
+#### 高级配置
+
+如果需要更多控制，可以使用 `extra` 字段：
+
+```json
+[
+  {
+    "id": "$UUID",
+    "name": "百度资源",
+    "type": 0,
+    "logo": "",
+    "nsfw": false,
+    "api": "https://cj.apibdzy.com/inc/api.php",
+    "extra": {
+      "category": "[]",  // 使用静态分类
+      "gfw": false,  // 是否需要代理访问
+      "sniffer": {} // 视频嗅探配置
+    }
+  }
+]
+```
+
+---
+
+## JS 扩展源
+
+JS 扩展源让你可以自定义数据源的实现逻辑，适合接入各种非标准的影视网站。
+
+### 开发工具
+
+小猫影视提供了完整的开发工具链（位于 `JS/` 目录）：
+
+- **cli**: 命令行工具，用于将你的实现导出为配置文件
+- **types**: TypeScript 类型定义，提供完整的接口规范
+
+### JS 运行环境与 Polyfill
+
+小猫影视的 JS 源运行在 Flutter JS 引擎中，为了让你的代码能够正常运行，我们提供了完整的 polyfill 支持：
+
+#### 已内置的 Polyfill
+
+**基础 API**（`js_polyfill.dart`）：
+- ~~`FormData`: 表单数据处理~~
+- `URLSearchParams`: URL 参数解析
+- `URL`: URL 对象（部分支持）
+- `dayjs`: 日期时间处理库
+
+**编码函数**（`polyfill.js`）：
+- `btoa` / `atob`: Base64 编码/解码
+- `encodeURI` / `decodeURI`: URI 编码/解码
+- `encodeURIComponent` / `decodeURIComponent`: URI 组件编码/解码
+- `escape` / `unescape`: 字符串转义（已废弃但仍可用）
+- `TextEncoder` / `TextDecoder`: 文本编码器
+
+**DOM API**（`dom_polyfill.js`）⚠️ **仅为模拟环境**：
+- `window` / `document`: 基础 DOM 对象（模拟）
+- `Element` / `Node`: DOM 元素和节点（模拟）
+- `Event` / `EventTarget`: 事件系统（模拟）
+- `XMLHttpRequest`: HTTP 请求（模拟，不会真实发送请求）
+- `localStorage` / `sessionStorage`: 本地存储（内存模拟）
+- `navigator` / `location` / `history`: 浏览器对象（模拟）
+
+#### 使用示例
+
+```javascript
+export default class MySource implements Handle {
+  async getHome() {
+    // 使用 Base64 编码
+    const encoded = btoa('小猫影视');
+    const decoded = atob(encoded);
+    
+    // 使用 URL 编码
+    const url = encodeURIComponent('https://example.com/搜索');
+    
+    // 使用 dayjs 处理日期
+    const now = dayjs().format('YYYY-MM-DD');
+    
+    // 使用 URLSearchParams
+    const params = new URLSearchParams('page=1&limit=20');
+    const page = params.get('page');
+    
+    return [];
   }
 }
 ```
-这里的 `$jscode` 就是实际上要编写的业务代码, 为了便于了解这里直接给出底层的 `eval`:
 
-```js
-(async ()=> {
-  const env = {
-    get(key, defaultValue) {
-      return this.params[key] ?? defaultValue
-    },
-    baseUrl: `$url`,
-    params: $ps,
-  };
-  $jscode
-})()
-```
+#### 注意事项
 
-这段根eval代码中:
+⚠️ **环境限制**：
+- JS 引擎不是完整的浏览器环境，某些浏览器特有的 API 可能不可用
+- **DOM polyfill 是纯内存模拟**，不会产生真实的 DOM 渲染或副作用
+- DOM API 主要用于让依赖 DOM 的第三方库能够加载，**不要依赖 DOM 操作来实现业务逻辑**
 
-- $url: 就是 `baseUrl`
-- $ps: 就是传递过来的参数
-- $jscode: 就是我们的真实业务代码啊, 同上↑
+💡 **最佳实践**：
+- 优先使用标准 JavaScript API（如 `JSON.parse`、`Array.map` 等）
+- 需要网络请求时，使用小猫影视提供的 HTTP 工具
 
-现在我们知道了底层的业务代码, 所以我们开始编写代码(假)
+### 快速开始
 
-```js
-// category/$jscode
-const resp = await fetch(`${baseUrl}/categorys`)
-return resp.json()
-```
-
-这种方式太不好了, 也不好调试, 所以我们提供完善的生态链:
-
-```diff
-+ "@types/kitty": "https://gitpkg.vercel.app/waifu-project/movie/JS/types?dev"
-+ "kitty": "https://gitpkg.vercel.app/waifu-project/movie/JS/cli?dev"
-```
-
-所以让我们真正的来编写JS源吧, 最佳实践:
-
-首先让我们初始化一个 npm 项目:
+#### 1. 创建项目
 
 ```bash
 npm init -y
-
-# 请使用 bun
-# 并添加依赖, 请注意这样安装包 package.json 中依赖会没有name, 请手动添加 :)
-bun i https://gitpkg.vercel.app/waifu-project/movie/JS/types?dev
-bun i https://gitpkg.vercel.app/waifu-project/movie/JS/cli?dev
 ```
 
-然后在项目里创建一个目录(必须是目录):
+#### 2. 安装依赖
 
-```bash
-mkdir -p js
-touch js/666tv.ts
+```diff
++    "@types/kitty": "https://gitpkg.vercel.app/waifu-project/movie/JS/types?dev",
++    "kitty": "https://gitpkg.vercel.app/waifu-project/movie/JS/cli?dev",
 ```
 
-这里提一嘴, 在小猫JS中内置了 `cheerio` 库, 所以可以直接用来操作 `html`, 我们用一个例子来展示:
+#### 3. 实现源逻辑
 
-> 更具体的请查看 `types/index.d.ts`
+创建 `demo.ts` 文件，实现 `Handle` 接口：
 
 ```ts
-// 请注意, 必须是默认导出的类
-// 这里的 Handle 就是我们要实现的接口(types/index.d.ts)
-export default class Re666TV implements Handle {
+export default class Demo implements Handle {
   getConfig() {
     return <Iconfig>{
-      id: '666tv', // $uuid
-      name: '666TV', // 名称
-      api: "https://d1y.movie", // 真实的接口地址
-      nsfw: false, // 是否是绅士源
-      type: 1, // 常量1
+      id: 'demo',
+      name: 'JS引擎配置',
+      api: "https://d1y.movie",
+      nsfw: false,
+      type: 1
     }
   }
   async getCategory() {
-    // 分类一般不会变, 所以直接 return 数组即可
-    // 你也同样可以动态获取($fetch->parse->return)
-    // PS: 这里没有参数, 即无法通过 env.get() 获取参数
-    return <ICategory>[
+    // TODO: impl this
+    return [
       { text: '电影', id: "1" },
       { text: '电视剧', id: "2" },
+      { text: '综艺', id: "3" },
+      { text: '动漫', id: "4" },
     ]
   }
   async getHome() {
-    const cate = env.get('category') // 分类id
-    const page = env.get('page') // 页码
-    const baseUrl = env.baseUrl // 接口地址
-    const url = `${baseUrl}/vodshow/page/${cate}-------${page}--.html` // 拼接成为真实的 url
-    const html = await req(url) // 这里的 req 是 types/index.d.ts 中的, 它自带缓存机制, 不要使用 fetch
-    const $ = kitty.load(html) // kitty.load 就是 cheerio.load 的别名
-    // 然后根据 HTML DOM 元素获取列表
-    const result: IMovie[] = $(".m4-list .item").toArray().map<IMovie>(item => {
-      const img = $(item).find("img.img")
-      const id = $(item).find("a.link").attr("href") ?? ""
-      const title = img.attr("alt") ?? ""
-      let cover = img.attr("data-src") ?? ""
-      if (!!cover && cover.startsWith("//")) {
-        cover = `https:${cover}`
-      }
-      const remark = $(item).find(".tag1").text() ?? ""
-      // id: 视频id
-      // title: 标题
-      // cover: 封面
-      // desc: 描述
-      // remark: 封面右下角标签
-      // playlist: 播放列表, getHome 可以为空
-      return { id, title, cover, desc: "", remark, playlist: [] }
-    })
-    return result
+    // TODO: impl this
+    return <IMovie[]>[]
   }
-  // 提示: 小猫会自动合并字段, 即如果 getHome() 中已经有了 { cover, title }
-  // 那么 getDetail() 就不需要再次返回这两个字段了(因为会合并啊!)
   async getDetail() {
-    const id = env.get("movieId") // 视频id
-    const url = `${env.baseUrl}${id}`
-    const html = await req(url)
-    const $ = kitty.load(html)
-    // 这里 playlist 就是播放列表
-    interface IPlaylist {
-      title: string // 源名称
-      videos: IPlaylistVideo[] // 视频列表
-    }
-    interface IPlaylistVideo {
-      text: string // 名称
-      // 这里的 type 通过 url | id 判断
-      // url 存在则为 m3u8
-      // id 则为 iframe
-      // type: 'm3u8' | 'iframe'
-      url?: string
-      id?: string
-    }
-    const playlist: IPlaylist[] = [ /* TODO: impl this */ ]
+    // TODO: impl this
     return <IMovie>{ id, cover, title, remark, desc, playlist }
   }
   async getSearch() {
-    const wd = env.get("keyword") // 搜索关键词
-    const page = env.get("page") // 页码
-    const url = `${env.baseUrl}/vodsearch/page/${page}--.html`
-    // 然后实现这一部分啊!
+    // TODO: impl this
     return <IMovie[]>[]
   }
   async parseIframe() {
-    // 这里的 iframe 解析是当 `IPlaylistVideo.id` 存在时才需要解析的
-    const iframe = env.get<string>("iframe") // iframe 地址
-    // 然后编写你的逻辑吧
-    //
-    // ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-    // 请注意, 当你分析一个源的播放地址源码的时候, 如果源中存在:
-    /*
-      <div></div><a href="$.html"/><a>
-      <script>
-        var palyer_aaaa = {
-          data: [],"url":"http://x.m3u8" 
-        }
-      </script>
-    */
-    // 这样的代码, 那么可以直接使用
-    return kitty.utils.getM3u8WithIframe(env)
+    // TODO: impl this
+    return ""
   }
 }
 ```
 
-太好了, 现在源逻辑已经编写完成了, 现在可以编译成配置文件了
+#### 4. 生成配置文件
+
+使用命令行工具导出配置：
 
 ```bash
-cd $proj
+# 查看帮助
+bunx kitty-parse --help
+
+# 生成配置文件
 bunx kitty-parse -o result.json
 ```
 
-现在你已经可以看到一个 `result.json` 文件, 它就是我们的源配置文件了
-现在给它放到网上去, 然后在设置中的视频源管理添加这个源地址就行了
+**命令选项说明：**
+- `-o, --output <file>`: 指定输出文件（默认：result.json）
+- `-d, --directory <dir>`: 指定扫描目录
+- `-v, --verbose`: 显示详细输出
+- `-h, --help`: 显示帮助信息
 
-参考:
+### JS 源高级配置
 
-```bash
-# 得到了 http://192.168.1.88:8080/result.json
-npx http-server
-```
-
-关于如何测试源, 可以参考: [d1y/kitty/utils.ts](https://github.com/d1y/kitty/blob/main/utils.ts)
-
-因为实际上, `global { kitty, req, env }` 这些环境变量在真实的node环境中是不存在的
-
-```bash
-cd $proj
-wget https://raw.githubusercontent.com/d1y/kitty/refs/heads/main/utils.ts
-```
-
-这时候你需要自己初始化一个 `tsc` 配置:
-
-```bash
-tsc --init
-```
-
-覆盖 `tsconfig.json` 文件:
+#### 完整配置示例
 
 ```json
 {
-  "compilerOptions": {
-    "target": "es2016",
-    "module": "commonjs",
-    "lib": [ "ESNext", "DOM" ],
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "utils": ["./utils.ts"],
-      "utils/*": ["./utils/*"]
+  "id": "advanced-source",
+  "name": "高级 JS 源",
+  "type": 1,
+  "api": "https://example.com",
+  "status": true,
+  "extra": {
+    // "template": "t4",
+    "js": {
+      "category": "getCategory",
+      "home": "getHome",
+      "search": "getSearch",
+      "detail": "getDetail",
+      "parseIframe": "parseIframe"
+    },
+    "searchLimit": 15,
+    "gfw": true,  // 需要代理访问
+    "sniffer": {
+      "timeout": 20000,
+      "customRegex": "https?://cdn\\.example\\.com/.*\\.(m3u8|mp4)"
     }
   }
 }
 ```
 
-然后就可以在 666TV.ts 中测试了:
+### 参考资源
 
-```ts
-import { kitty, req, createTestEnv } from 'utils'
+- **完整类型定义**: [index.d.ts](../JS/types/index.d.ts)
+- **示例项目**: https://github.com/d1y/kitty
 
-// TEST
-const env = createTestEnv("https://d1y.movie") // 需要跟真实环境一致
-const tv = new Re666TV()
-;(async ()=> {
-  const category = await tv.getCategory()
-  env.set("category", category[0].id)
-  env.set("page", 2)
-  const home = await tv.getHome()
-  env.set("keyword", "黑社会")
-  const search = await tv.getSearch()
-  // env.set("movieId", search[1].id)
-  env.set("movieId", home[1].id)
-  const detail = await tv.getDetail()
-  env.set("iframe", detail[0].playlist[0].id)
-  const realM3u8 = await tv.parseIframe()
-  debugger
-})()
+---
+
+## 视频嗅探功能
+
+> 感谢道长 (@hjdhnx) 的原创实现：https://github.com/hjdhnx/pup-sniffer
+
+### 什么是视频嗅探
+
+视频嗅探是一个智能功能，可以自动从网页中提取真实的视频播放地址。当你遇到无法直接播放的视频链接时，嗅探功能会帮你找到可播放的视频资源。
+
+### 自动触发条件
+
+当满足以下条件时，小猫影视会自动启动视频嗅探：
+
+1. 在 `getDetail()` 或 `getHome()` 中，视频链接被标记为 `iframe` 类型
+   - 例如：`{ text: '第一集', id: '$iframe_url' }`
+2. 源配置中没有实现 `parseIframe` 方法
+
+### 嗅探配置参数
+
+你可以在源配置的 `extra.sniffer` 中自定义嗅探行为：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `mode` | int | 0 | 嗅探模式：0=返回第一个匹配的URL，1=返回所有匹配的URL |
+| `timeout` | int | 10000 | 超时时间（毫秒） |
+| `customRegex` | string | - | 自定义正则表达式，用于匹配特定格式的媒体 URL |
+| `exclude` | string | - | 排除规则，匹配的 URL 将被忽略（支持正则） |
+| `script` | string | - | 页面加载完成后执行的 JavaScript 脚本 |
+| `initScript` | string | - | 页面初始化时执行的 JavaScript 脚本 |
+
+**配置示例：**
+
+```json
+{
+  "extra": {
+    "sniffer": {
+      "mode": 0,
+      "timeout": 15000,
+      "customRegex": "https?://cdn\\.example\\.com/.*\\.(m3u8|mp4)",
+      "exclude": "ads\\.example\\.com|tracker\\.example\\.com",
+      "script": "document.querySelector('video')?.play();"
+    }
+  }
+}
 ```
 
-**测试完成了之后, 请务必注释掉第一行的 `import`, 否则会导致打包的结果无法正常运行**
+### 常见问题
 
-## 结尾
+#### Q: 为什么嗅探不到视频？
 
-**这里有一个最佳实践: [d1y/kitty](https://github.com/d1y/kitty)**
+可能的原因：
+- 网页使用了加密或混淆技术
+- 视频需要登录或付费才能观看
+- 网站使用了特殊的播放器技术
+- 网络连接不稳定或被限制
 
---------------
+#### Q: 嗅探到的视频无法播放？
 
-如果你发现了什么问题, 或者有什么建议, 请在 issue 中提出, 我会尽快回复
+可能的原因：
+- 视频链接有时效性限制，已过期
+- 视频有防盗链保护（需要特定 Referer）
+- 视频格式不被当前播放器支持
+- 缺少必要的请求头（User-Agent 等）

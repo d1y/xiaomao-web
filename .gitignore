@@ -7,3 +7,5 @@ docs/.vuepress/dist
 .DS_Store
 *.log
 bun.lock
+# Local Netlify folder
+.netlify
